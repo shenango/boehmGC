@@ -14,6 +14,11 @@
  * modified is included with the above copyright notice.
  */
 
+#ifdef SHENANGO_THREADS
+#include <runtime/runtime.h>
+#undef WARN
+#endif
+
 #include "private/gc_priv.h"
 
 #if !defined(OS2) && !defined(PCR) && !defined(AMIGA) && !defined(MACOS) \
@@ -3306,6 +3311,9 @@ GC_API GC_push_other_roots_proc GC_CALL GC_get_push_other_roots(void)
 #if !defined(DARWIN)
   GC_INNER GC_bool GC_mprotect_dirty_init(void)
   {
+    #ifdef SHENANGO_THREADS
+    BUG();
+    #else
 #   if !defined(MSWIN32) && !defined(MSWINCE)
       struct sigaction act, oldact;
       act.sa_flags = SA_RESTART | SA_SIGINFO;
@@ -3394,6 +3402,7 @@ GC_API GC_push_other_roots_proc GC_CALL GC_get_push_other_roots(void)
       GC_noop1((word)&__asan_default_options);
 #   endif
     return TRUE;
+    #endif
   }
 #endif /* !DARWIN */
 
@@ -4137,6 +4146,9 @@ STATIC void *GC_mprotect_thread(void *arg)
 
 GC_INNER GC_bool GC_mprotect_dirty_init(void)
 {
+  #ifdef SHENANGO_THREADS
+  BUG();
+#else
   kern_return_t r;
   mach_port_t me;
   pthread_t thread;
@@ -4226,6 +4238,7 @@ GC_INNER GC_bool GC_mprotect_dirty_init(void)
     }
 # endif /* BROKEN_EXCEPTION_HANDLING  */
   return TRUE;
+  #endif
 }
 
 /* The source code for Apple's GDB was used as a reference for the      */

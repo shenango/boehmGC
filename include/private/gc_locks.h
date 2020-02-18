@@ -18,6 +18,22 @@
 #ifndef GC_LOCKS_H
 #define GC_LOCKS_H
 
+#ifdef SHENANGO_THREADS
+#include <runtime/sync.h>
+#undef WARN
+
+#define pthread_mutex_t mutex_t
+#define pthread_mutex_unlock mutex_unlock
+#define pthread_mutex_lock mutex_lock
+#define pthread_mutex_trylock _mutex_trylock
+
+static inline GC_bool _mutex_trylock(mutex_t *m)
+{
+  return !mutex_try_lock(m);
+}
+
+#endif
+
 /*
  * Mutual exclusion between allocator/collector routines.
  * Needed if there is more than one allocator thread.
@@ -52,7 +68,7 @@
 #     define UNCOND_UNLOCK() GC_unlock()
 #  endif
 
-#  if (!defined(AO_HAVE_test_and_set_acquire) || defined(GC_RTEMS_PTHREADS) \
+#  if (defined(SHENANGO_THREADS) || !defined(AO_HAVE_test_and_set_acquire) || defined(GC_RTEMS_PTHREADS) \
        || defined(SN_TARGET_ORBIS) || defined(SN_TARGET_PS3) \
        || defined(GC_WIN32_THREADS) || defined(BASE_ATOMIC_OPS_EMULATED) \
        || defined(LINT2)) && defined(GC_PTHREADS)

@@ -293,6 +293,19 @@ case "$THREADS" in
     AC_DEFINE([EMPTY_GETENV_RESULTS], [1],
               [Wine getenv may not return NULL for missing entry.])
     ;;
+ shenango)
+    THREADS=shenango
+    AC_DEFINE(GC_THREADS)
+    use_parallel_mark=$enable_parallel_mark
+    if test "${enable_parallel_mark}" != no \
+            -o "${enable_shared}" != yes -o "${enable_static}" != no; then
+      # Imply THREAD_LOCAL_ALLOC unless GC_DLL.
+      use_thread_local_alloc=$enable_thread_local_alloc
+    fi
+    shenango_threads=true
+    AC_DEFINE([EMPTY_GETENV_RESULTS], [1],
+              [Wine getenv may not return NULL for missing entry.])
+    ;;
  dgux386)
     AC_DEFINE(GC_THREADS)
     THREADS=dgux386
@@ -330,6 +343,7 @@ AM_CONDITIONAL(THREADS, test x$THREADS != xnone)
 AM_CONDITIONAL(PTHREADS, test x$THREADS = xposix)
 AM_CONDITIONAL(DARWIN_THREADS, test x$darwin_threads = xtrue)
 AM_CONDITIONAL(WIN32_THREADS, test x$win32_threads = xtrue)
+AM_CONDITIONAL(SHENANGO_THREADS, test x$shenango_threads = xtrue)
 
 compiler_suncc=no
 pthread_start_standalone=no

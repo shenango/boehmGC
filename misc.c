@@ -901,6 +901,7 @@ STATIC word GC_parse_mem_size_arg(const char *str)
 GC_API void GC_CALL GC_init(void)
 {
     /* LOCK(); -- no longer does anything this early. */
+  LOCK();
     word initial_heap_sz;
     IF_CANCEL(int cancel_state;)
 #   if defined(GC_ASSERTIONS) && defined(GC_ALWAYS_MULTITHREADED)
@@ -1357,6 +1358,7 @@ GC_API void GC_CALL GC_init(void)
         GC_init_dyld();
 #   endif
     RESTORE_CANCEL(cancel_state);
+    UNLOCK();
 }
 
 GC_API void GC_CALL GC_enable_incremental(void)
