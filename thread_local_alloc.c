@@ -300,22 +300,30 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_kind(size_t bytes, int kind)
             } else {
                 /* Large counter or NULL */
                 unsigned int prevaff = get_current_affinity();
-                void *ptrout, *prev_fl_val = *my_fl;
+                void *ptrout;
                 preempt_enable();
                 GC_generic_malloc_many(((granules) == 0? GC_GRANULE_BYTES :
                                         GC_RAW_BYTES_FROM_INDEX(granules)),
                                        kind, &ptrout);
-                preempt_disable();
-                // check to see if our fl reference is still valid
-                if (prevaff == get_current_affinity() && *my_fl == prev_fl_val) {
-                  *my_fl = ptrout;
-                  my_entry = *my_fl;
-                  if (my_entry == 0) {
-                      preempt_enable();
-                      result = (*GC_get_oom_fn())((granules)*GC_GRANULE_BYTES);
-                      break;
-                  }
+                if (GC_EXPECT(ptrout == 0, 0)) {
+                  result = (*GC_get_oom_fn())((granules)*GC_GRANULE_BYTES);
+                  break;
                 }
+
+                preempt_disable();
+
+                // is our thread local reference still valid?
+                if (GC_EXPECT(prevaff != get_current_affinity(), 0)) {
+                  // take the first object in the free list and lose the rest
+                  result = ptrout;
+                  *(void **)ptrout = 0;
+                  preempt_enable();
+                  break;
+                }
+
+                // possibly overwrite existing fl
+                *my_fl = ptrout;
+                my_entry = ptrout;
             }
         }
     }
