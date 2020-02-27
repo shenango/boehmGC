@@ -23,6 +23,36 @@
 
 #include <stdlib.h>
 
+#ifdef SHENANGO_THREADS
+#include "private/shenango_support.h"
+
+static __thread struct thread_local_freelists tlfs;
+static GC_tlfs all_tlfs[NCPU];
+static unsigned int registered_tlfs;
+static DEFINE_SPINLOCK(tlfsinit);
+
+GC_API int GC_init_thread(void)
+{
+    spin_lock(&tlfsinit);
+    all_tlfs[registered_tlfs++] = &tlfs;
+    spin_unlock(&tlfsinit);
+    GC_init_thread_local(&tlfs);
+    return 0;
+}
+
+GC_INNER void GC_mark_thread_local_free_lists(void)
+{
+    unsigned int i;
+
+    WARN_ON_ONCE(registered_tlfs != maxks);
+
+    for (i = 0; i < maxks; i++)
+      GC_mark_thread_local_fls_for(all_tlfs[i]);
+}
+#endif
+
+
+
 #if defined(USE_COMPILER_TLS)
   __thread GC_ATTR_TLS_FAST
 #elif defined(USE_WIN32_COMPILER_TLS)
@@ -30,7 +60,9 @@
 #endif
 GC_key_t GC_thread_key;
 
+#ifndef SHENANGO_THREADS
 static GC_bool keys_initialized;
+#endif
 
 /* Return a single nonempty freelist fl to the global one pointed to    */
 /* by gfl.                                                              */
@@ -95,6 +127,7 @@ GC_INNER void GC_init_thread_local(GC_tlfs p)
 {
     int i, j, res;
 
+#ifndef SHENANGO_THREADS
     GC_ASSERT(I_HOLD_LOCK());
     if (!EXPECT(keys_initialized, TRUE)) {
         GC_ASSERT((word)&GC_thread_key % sizeof(word) == 0);
@@ -104,10 +137,13 @@ GC_INNER void GC_init_thread_local(GC_tlfs p)
         }
         keys_initialized = TRUE;
     }
+#endif
     res = GC_setspecific(GC_thread_key, p);
+#ifndef SHENANGO_THREADS
     if (COVERT_DATAFLOW(res) != 0) {
         ABORT("Failed to set thread specific allocation pointers");
     }
+#endif
     for (j = 0; j < TINY_FREELISTS; ++j) {
         for (i = 0; i < THREAD_FREELISTS_KINDS; ++i) {
             p -> _freelists[i][j] = (void *)(word)1;
@@ -141,17 +177,66 @@ GC_INNER void GC_destroy_thread_local(GC_tlfs p)
 #   endif
 }
 
+#if defined(THREAD_LOCAL_STAT_DEBUG) && defined(SHENANGO_THREADS)
+
+static volatile unsigned long global_fills[256 * 8] __aligned(64);
+static volatile unsigned long local_fills[256 * 8] __aligned(64);
+
+void get_counts(unsigned long *glob, unsigned long *loc)
+{
+	static unsigned long last_global;
+	static unsigned long last_local;
+	unsigned long new_global = 0;
+	unsigned long new_local = 0;
+	for (unsigned int i = 0; i < maxks; i++) {
+		new_global += global_fills[i * 8];
+		new_local += local_fills[i * 8];
+	}
+
+	*glob = new_global - last_global;
+	*loc = new_local - last_local;
+	last_global = new_global;
+	last_local = new_local;
+}
+
+static inline void increment_global(void)
+{
+  global_fills[get_current_affinity() * 8]++;
+}
+
+static inline void increment_local(void)
+{
+  local_fills[get_current_affinity() * 8]++;
+}
+
+#else
+static inline void increment_global(void) {}
+static inline void increment_local(void) {}
+#endif
+
+#ifndef SHENANGO_THREADS
+#define preempt_enable ;
+#define preempt_disable ;
+#define get_current_affinity(x) (0)
+#endif
+
+
 GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_kind(size_t bytes, int kind)
 {
     size_t granules;
     void *tsd;
     void *result;
+    increment_local();
 
 #   if MAXOBJKINDS > THREAD_FREELISTS_KINDS
       if (EXPECT(kind >= THREAD_FREELISTS_KINDS, FALSE)) {
+        increment_global();
         return GC_malloc_kind_global(bytes, kind);
       }
 #   endif
+
+    preempt_disable();
+
 #   if !defined(USE_PTHREAD_SPECIFIC) && !defined(USE_WIN32_SPECIFIC)
     {
       GC_key_t k = GC_thread_key;
@@ -176,11 +261,65 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_kind(size_t bytes, int kind)
     GC_ASSERT(GC_is_initialized);
     GC_ASSERT(GC_is_thread_tsd_valid(tsd));
     granules = ROUNDED_UP_GRANULES(bytes);
-    GC_FAST_MALLOC_GRANS(result, granules,
-                         ((GC_tlfs)tsd) -> _freelists[kind], DIRECT_GRANULES,
-                         kind, GC_malloc_kind_global(bytes, kind),
-                         (void)(kind == PTRFREE ? NULL
-                                               : (obj_link(result) = 0)));
+    if (GC_EXPECT((granules) >= GC_TINY_FREELISTS,0)) {
+        increment_global();
+        preempt_enable();
+        result = GC_malloc_kind_global(bytes, kind);
+    } else {
+        void **my_fl = (((GC_tlfs)tsd) -> _freelists[kind]) + (granules);
+        void *my_entry=*my_fl;
+        void *next;
+        for (;;) {
+            if (GC_EXPECT((GC_word)my_entry
+                          > (DIRECT_GRANULES) + GC_TINY_FREELISTS + 1, 1)) {
+                next = *(void **)(my_entry);
+                result = (void *)my_entry;
+                GC_FAST_M_AO_STORE(my_fl, next);
+                (void)(kind == PTRFREE ? NULL : (obj_link(result) = 0));
+                GC_PREFETCH_FOR_WRITE(next);
+                if ((kind) != GC_I_PTRFREE) {
+                    GC_end_stubborn_change(my_fl);
+                    GC_reachable_here(next);
+                }
+                GC_ASSERT(GC_size(result) >= (granules)*GC_GRANULE_BYTES);
+                GC_ASSERT((kind) == GC_I_PTRFREE || ((GC_word *)result)[1] == 0);
+                preempt_enable();
+                break;
+            }
+            /* Entry contains counter or NULL */
+            if ((GC_signed_word)my_entry - (GC_signed_word)(DIRECT_GRANULES) <= 0
+                    /* (GC_word)my_entry <= (num_direct) */
+                    && my_entry != 0 /* NULL */) {
+                /* Small counter value, not NULL */
+                GC_FAST_M_AO_STORE(my_fl, (char *)my_entry
+                                          + (granules) + 1);
+                increment_global();
+                preempt_enable();
+                result = GC_malloc_kind_global(bytes, kind);
+                break;
+            } else {
+                /* Large counter or NULL */
+                unsigned int prevaff = get_current_affinity();
+                void *ptrout, *prev_fl_val = *my_fl;
+                preempt_enable();
+                GC_generic_malloc_many(((granules) == 0? GC_GRANULE_BYTES :
+                                        GC_RAW_BYTES_FROM_INDEX(granules)),
+                                       kind, &ptrout);
+                preempt_disable();
+                // check to see if our fl reference is still valid
+                if (prevaff == get_current_affinity() && *my_fl == prev_fl_val) {
+                  *my_fl = ptrout;
+                  my_entry = *my_fl;
+                  if (my_entry == 0) {
+                      preempt_enable();
+                      result = (*GC_get_oom_fn())((granules)*GC_GRANULE_BYTES);
+                      break;
+                  }
+                }
+            }
+        }
+    }
+
 #   ifdef LOG_ALLOCS
       GC_log_printf("GC_malloc_kind(%lu, %d) returned %p, recent GC #%lu\n",
                     (unsigned long)bytes, kind, result,

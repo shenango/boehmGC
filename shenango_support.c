@@ -29,11 +29,8 @@
 
 
 #if defined(SHENANGO_THREADS)
+#include "private/shenango_support.h"
 
-#include <runtime/runtime.h>
-#include <runtime/gc.h>
-#include <base/log.h>
-#undef WARN
 
 DEFINE_MUTEX(GC_allocate_ml);
 static DEFINE_MUTEX(mark_mutex);
