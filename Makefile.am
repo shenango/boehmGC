@@ -36,7 +36,7 @@ SUBDIRS =
 ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = \
     -I$(top_builddir)/include -I$(top_srcdir)/include \
-    $(ATOMIC_OPS_CFLAGS) -I/home/friedj/shenango/inc/ -DGC_NO_FINALIZATION
+    $(ATOMIC_OPS_CFLAGS) -DGC_NO_FINALIZATION
 
 ## Initialize variables so that we can declare files locally.
 EXTRA_DIST =
@@ -92,7 +92,7 @@ endif
 endif
 
 if SHENANGO_THREADS
-AM_CPPFLAGS += -DSHENANGO_THREADS -DINCLUDE_LINUX_THREAD_DESCR
+AM_CPPFLAGS += -DSHENANGO_THREADS -DINCLUDE_LINUX_THREAD_DESCR $(SHEN_CPPFLAGS)
 libgc_la_SOURCES += shenango_support.c
 endif
 

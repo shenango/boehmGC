@@ -295,6 +295,8 @@ case "$THREADS" in
     ;;
  shenango)
     THREADS=shenango
+    AX_SHENANGO
+    AC_SUBST([SHEN_CPPFLAGS])
     AC_DEFINE(GC_THREADS)
     use_parallel_mark=$enable_parallel_mark
     if test "${enable_parallel_mark}" != no \
