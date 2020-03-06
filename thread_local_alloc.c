@@ -26,28 +26,29 @@
 #ifdef SHENANGO_THREADS
 #include "private/shenango_support.h"
 
-static __thread struct thread_local_freelists tlfs;
-static GC_tlfs all_tlfs[NCPU];
+struct padded_tlfs {
+  struct thread_local_freelists tlfs;
+} __aligned(128);
+
+static struct padded_tlfs all_tlfs[NCPU];
 static unsigned int registered_tlfs;
 static DEFINE_SPINLOCK(tlfsinit);
 
-GC_API int GC_init_thread(void)
+static void GC_alloc_tlfs(void)
 {
+    struct thread_local_freelists *tlfs;
     spin_lock(&tlfsinit);
-    all_tlfs[registered_tlfs++] = &tlfs;
+    tlfs = &all_tlfs[registered_tlfs++].tlfs;
     spin_unlock(&tlfsinit);
-    GC_init_thread_local(&tlfs);
-    return 0;
+    GC_init_thread_local(tlfs);
 }
 
 GC_INNER void GC_mark_thread_local_free_lists(void)
 {
     unsigned int i;
 
-    WARN_ON_ONCE(registered_tlfs != maxks);
-
     for (i = 0; i < maxks; i++)
-      GC_mark_thread_local_fls_for(all_tlfs[i]);
+      GC_mark_thread_local_fls_for(&all_tlfs[i].tlfs);
 }
 #endif
 
@@ -242,9 +243,14 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_kind(size_t bytes, int kind)
       GC_key_t k = GC_thread_key;
 
       if (EXPECT(0 == k, FALSE)) {
-        /* We haven't yet run GC_init_parallel.  That means     */
-        /* we also aren't locking, so this is fairly cheap.     */
-        return GC_malloc_kind_global(bytes, kind);
+        GC_alloc_tlfs();
+        k = GC_thread_key;
+        if (EXPECT(0 == k, FALSE)) {
+          preempt_enable();
+          /* We haven't yet run GC_init_parallel.  That means     */
+          /* we also aren't locking, so this is fairly cheap.     */
+          return GC_malloc_kind_global(bytes, kind);
+        }
       }
       tsd = GC_getspecific(k);
     }

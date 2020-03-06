@@ -71,7 +71,7 @@
 /* of size zero objects.                                                */
 #ifndef GC_TINY_FREELISTS
 # if GC_GRANULE_BYTES == 16
-#   define GC_TINY_FREELISTS 25
+#   define GC_TINY_FREELISTS 70
 # else
 #   define GC_TINY_FREELISTS 33 /* Up to and including 256 bytes */
 # endif
