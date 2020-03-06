@@ -33,7 +33,7 @@ AM_PROG_CC_C_O
 AC_PROG_CXX
 AM_PROG_AS
 AC_PROG_INSTALL
-LT_INIT([disable-static])
+LT_INIT([disable-shared])
 # Only the shared libraries are produced by default, use "--enable-static"
 # option to override it.
 dnl Note: If Autoconf reports that LIBTOOL (or AC_ENABLE_SHARED, or
@@ -800,7 +800,7 @@ fi
 AC_ARG_ENABLE(java-finalization,
     [AC_HELP_STRING([--disable-java-finalization],
                     [disable support for java finalization])])
-if test x"$enable_java_finalization" != xno; then
+if test x"$enable_java_finalization" = xyes; then
     AC_DEFINE([JAVA_FINALIZATION], 1, [See doc/README.macros.])
 fi
 
@@ -843,7 +843,7 @@ AM_CONDITIONAL(ENABLE_DISCLAIM,
 AC_ARG_ENABLE(large-config,
     [AC_HELP_STRING([--enable-large-config],
         [optimize for large (> 100 MB) heap or root set])])
-if test "${enable_large_config}" = yes; then
+if test x"${enable_large_config}" != xno; then
     AC_DEFINE(LARGE_CONFIG, 1,
               [Define to optimize for large heaps or root sets.])
 fi
@@ -1112,7 +1112,9 @@ AC_ARG_ENABLE(handle-fork,
                       in multi-threaded programs (default: auto;
                       manual: GC_atfork_prepare/parent/child should be
                       called by the client)]) ])
-if test "${enable_handle_fork}" = yes; then
+if test x"$threads" = xshenango; then
+    AC_DEFINE(NO_HANDLE_FORK, 1)
+elif test "${enable_handle_fork}" = yes; then
     AC_DEFINE(HANDLE_FORK, 1,
               [Define to install pthread_atfork() handlers by default.])
 elif test "${enable_handle_fork}" = no; then
