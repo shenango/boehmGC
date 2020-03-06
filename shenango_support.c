@@ -169,8 +169,30 @@ GC_INNER void GC_start_mark_threads_inner(void)
 
 }
 
+const char *names[] = {
+    "GC_EVENT_START", /* COLLECTION */
+    "GC_EVENT_MARK_START",
+    "GC_EVENT_MARK_END",
+    "GC_EVENT_RECLAIM_START",
+    "GC_EVENT_RECLAIM_END",
+    "GC_EVENT_END", /* COLLECTION */
+    "GC_EVENT_PRE_STOP_WORLD", /* STOPWORLD_BEGIN */
+    "GC_EVENT_POST_STOP_WORLD", /* STOPWORLD_END */
+    "GC_EVENT_PRE_START_WORLD", /* STARTWORLD_BEGIN */
+    "GC_EVENT_POST_START_WORLD", /* STARTWORLD_END */
+    "GC_EVENT_THREAD_SUSPENDED",
+    "GC_EVENT_THREAD_UNSUSPENDED"
+};
+
+void notify(GC_EventType ev)
+{
+  log_err("%lu: %s", rdtsc(), names[ev]);
+}
+
 GC_INNER void GC_thr_init(void)
 {
+
+  GC_set_on_collection_event(notify);
 
   set_need_to_lock();
   GC_ASSERT(I_HOLD_LOCK());

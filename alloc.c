@@ -464,9 +464,9 @@ GC_API void GC_CALL GC_set_on_collection_event(GC_on_collection_event_proc fn)
 {
     /* fn may be 0 (means no event notifier). */
     DCL_LOCK_STATE;
-    LOCK();
+//    LOCK();
     GC_on_collection_event = fn;
-    UNLOCK();
+  //  UNLOCK();
 }
 
 GC_API GC_on_collection_event_proc GC_CALL GC_get_on_collection_event(void)
