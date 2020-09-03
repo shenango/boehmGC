@@ -602,7 +602,9 @@ STATIC GC_bool GC_register_dynamic_libraries_dl_iterate_phdr(void)
 # endif
 
   did_something = 0;
+  preempt_disable();
   dl_iterate_phdr(GC_register_dynlib_callback, &did_something);
+  preempt_enable();
   if (did_something) {
 #   ifdef PT_GNU_RELRO
       int i;

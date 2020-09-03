@@ -186,7 +186,9 @@ const char *names[] = {
 
 void notify(GC_EventType ev)
 {
+  preempt_disable();
   log_err("%lu: %s", rdtsc(), names[ev]);
+  preempt_enable();
 }
 
 GC_INNER void GC_thr_init(void)
